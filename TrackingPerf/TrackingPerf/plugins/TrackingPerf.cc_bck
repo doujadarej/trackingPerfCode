@@ -1,0 +1,838 @@
+// -*- C++ -*-
+//
+// Package:    TrackingStudies/TrackingPerf
+// Class:      TrackingPerf
+//
+/**\class TrackingPerf TrackingPerf.cc TrackingStudies/TrackingPerf/plugins/TrackingPerf.cc
+
+ Description: [one line class summary]
+
+ Implementation:
+     [Notes on implementation]
+*/
+//
+// Original Author:  Jeremy Andrea
+//         Created:  Thu, 14 Mar 2019 10:47:50 GMT
+//
+//
+
+
+// system include files
+#include <memory>
+
+// user include files
+
+#include <memory>
+
+// user include files
+#include "FWCore/Framework/interface/Frameworkfwd.h"
+#include "FWCore/Framework/interface/one/EDAnalyzer.h"
+
+#include "FWCore/Framework/interface/Event.h"
+#include "FWCore/Framework/interface/MakerMacros.h"
+
+#include "FWCore/Framework/interface/EventSetup.h"
+#include "FWCore/Framework/interface/ESHandle.h"
+#include "FWCore/ParameterSet/interface/ParameterSet.h"
+
+
+#include "DataFormats/Common/interface/View.h"
+#include "DataFormats/TrackReco/interface/TrackFwd.h"
+#include "DataFormats/TrackReco/interface/Track.h"
+#include "DataFormats/TrackCandidate/interface/TrackCandidateCollection.h"
+#include "DataFormats/TrackingRecHit/interface/InvalidTrackingRecHit.h"
+
+#include "Geometry/Records/interface/TrackerDigiGeometryRecord.h"
+#include "Geometry/TrackerGeometryBuilder/interface/TrackerGeometry.h"
+#include "MagneticField/Engine/interface/MagneticField.h"
+#include "MagneticField/Records/interface/IdealMagneticFieldRecord.h"
+#include "TrackingTools/TrajectoryState/interface/TrajectoryStateTransform.h"
+#include "TrackingTools/TrajectoryState/interface/TrajectoryStateOnSurface.h"
+
+#include "TrackingTools/Records/interface/TransientRecHitRecord.h"
+#include "TrackingTools/TransientTrackingRecHit/interface/TransientTrackingRecHit.h"
+#include "TrackingTools/TransientTrackingRecHit/interface/TransientTrackingRecHitBuilder.h"
+
+#include "RecoTracker/TransientTrackingRecHit/interface/TkTransientTrackingRecHitBuilder.h"
+
+#include "TrackingTools/TransientTrack/interface/TransientTrackBuilder.h"
+#include "TrackingTools/Records/interface/TrackingComponentsRecord.h"
+
+#include "TrackingTools/Records/interface/TransientTrackRecord.h"
+#include "DataFormats/TrackerRecHit2D/interface/SiStripRecHit1D.h"
+#include "DataFormats/TrackerRecHit2D/interface/SiStripRecHit2D.h"
+#include "DataFormats/TrackerRecHit2D/interface/SiPixelRecHitCollection.h"
+
+
+#include "TrackingTools/PatternTools/interface/Trajectory.h"
+#include "TrackingTools/PatternTools/interface/TrajTrackAssociation.h"
+
+
+#include "RecoLocalTracker/SiStripClusterizer/interface/SiStripClusterInfo.h"
+
+#include "RecoLocalTracker/ClusterParameterEstimator/interface/StripClusterParameterEstimator.h"
+#include "RecoLocalTracker/ClusterParameterEstimator/interface/PixelClusterParameterEstimator.h"
+
+
+/*#include "DataFormats/SiStripDetId/interface/TIBDetId.h"
+#include "DataFormats/SiStripDetId/interface/TIDDetId.h"
+#include "DataFormats/SiStripDetId/interface/TOBDetId.h"
+#include "DataFormats/SiStripDetId/interface/TECDetId.h"*/
+#include "DataFormats/SiStripDetId/interface/SiStripDetId.h"
+#include "DataFormats/SiStripDetId/interface/SiStripSubStructure.h"
+#include "DataFormats/SiStripDetId/interface/StripSubdetector.h"
+
+
+
+#include "Geometry/TrackerGeometryBuilder/interface/PixelGeomDetUnit.h"
+
+#include "FWCore/ServiceRegistry/interface/Service.h" 
+#include "CommonTools/UtilAlgos/interface/TFileService.h"
+#include <TTree.h>
+
+//includes for track-sim association
+
+#include "SimTracker/TrackerHitAssociation/interface/TrackerHitAssociator.h"
+#include "SimTracker/TrackAssociation/plugins/ParametersDefinerForTPESProducer.h"
+#include "SimTracker/TrackAssociation/interface/TrackingParticleIP.h"
+#include "DataFormats/RecoCandidate/interface/TrackAssociation.h"
+#include "SimDataFormats/Associations/interface/TrackToTrackingParticleAssociator.h"
+
+
+//
+// class declaration
+//
+
+// If the analyzer does not use TFileService, please remove
+// the template argument to the base class so the class inherits
+// from  edm::one::EDAnalyzer<>
+// This will improve performance in multithreaded jobs.
+
+
+using reco::TrackCollection;
+using TrackingParticleRefKeyToIndex = std::unordered_map<reco::RecoToSimCollection::index_type, size_t>;
+
+
+class TrackingPerf : public edm::one::EDAnalyzer<edm::one::SharedResources>  {
+   public:
+      explicit TrackingPerf(const edm::ParameterSet&);
+      ~TrackingPerf();
+
+      static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
+
+
+   private:
+      virtual void beginJob() override;
+      virtual void analyze(const edm::Event&, const edm::EventSetup&) override;
+      virtual void endJob() override;
+
+      // ----------member data ---------------------------
+      edm::EDGetTokenT<TrackCollection> tracksToken_;  //used to select what tracks to read from configuration file
+      
+      // ----------member data ---------------------------
+  
+  void clearVariables();
+  edm::InputTag tkTraj_;
+
+  const edm::EDGetTokenT<edm::View<reco::Track> > trackToken_;
+  const edm::EDGetTokenT<edm::View<reco::Track> > trackSrc_;
+  const edm::EDGetTokenT<std::vector<Trajectory> > trajSrc_;
+  const edm::EDGetTokenT<TrajTrackAssociationCollection> trajTrackAssociationSrc_;
+  const edm::EDGetTokenT<reco::TrackToTrackingParticleAssociator> trackAssociatorToken_;
+  const edm::EDGetTokenT<reco::BeamSpot> beamSpotToken_;
+ 
+  TTree *smalltree;
+  
+  edm::Service<TFileService> fs;
+
+ 
+  std::string ttrhbuilder_; 
+  
+  edm::ESHandle<MagneticField> bField;
+  
+  edm::EDGetTokenT<TrackingParticleCollection> trackingParticleToken_;
+  edm::EDGetTokenT<TrackingParticleRefVector> trackingParticleRefToken_;
+  
+  
+  //-----------------------
+  //fill the tree per track
+  //std::vector<int> tree_track_nclusters;
+  std::vector< double > tree_track_pt;
+  std::vector< double > tree_track_eta;
+  std::vector< double > tree_track_phi;
+  std::vector<int>      tree_track_nhits;
+  std::vector<double >  tree_track_NChi2;
+  std::vector<double >  tree_track_Quality;
+  std::vector< double>  tree_track_dxy; // dxy with respect to beam spot position
+  std::vector< double>  tree_track_dxyError;
+  std::vector< double>  tree_track_dz;
+  std::vector< double>  tree_track_dzError ;
+  std::vector<int>      tree_track_numberOfLostHits;
+  std::vector<int>      tree_track_numberOfValidHits;
+  std::vector<unsigned int>     tree_track_originalAlgo; // definition as comments at the end of the file, http://cmsdoxygen.web.cern.ch/cmsdoxygen/CMSSW_10_1_3/doc/html/d8/df2/classreco_1_1TrackBase.html#aca7611bd1a33d535cefc72b6e497ece8
+  std::vector<unsigned int>     tree_track_algo; 
+  std::vector<int>              tree_track_idxClusterFirst;
+  std::vector<int>              tree_track_idxClusterLast;
+  std::vector<unsigned short>   tree_track_stopReason;
+  std::vector<int>              tree_track_nSimHits   ; 
+  std::vector<bool>             tree_track_isSimMatched;
+  
+  
+  
+  int    runNumber,eventNumber,lumiBlock; 
+  
+  //then fill information of clusters
+  //attached to the tracks
+  
+  std::vector< int >     tree_SiCluster_subDet; 
+  std::vector< int >     tree_SiCluster_PetalSide;
+  std::vector< int >     tree_SiCluster_LayerNbr; 
+  std::vector< int >     tree_SiCluster_WheelSide; 
+  std::vector< double >  tree_SiCluster_charge;
+  std::vector< double >  tree_SiCluster_SoverN;
+  std::vector< double >  tree_SiCluster_noise;
+  std::vector< int >     tree_SiCluster_width;
+  std::vector< double >  tree_SiCluster_barycenter;
+  std::vector< int >     tree_SiCluster_detID;
+  
+   // cluster position ----
+  std::vector< float >  tree_SiCluster_locX;
+  std::vector< float >  tree_SiCluster_locY;
+  std::vector< double >  tree_SiCluster_tsosx;
+  std::vector< double >  tree_SiCluster_tsosy;
+  std::vector< float >  tree_SiCluster_globX;
+  std::vector< float >  tree_SiCluster_globY;
+  std::vector< float >  tree_SiCluster_globZ;
+  std::vector< float >  tree_SiCluster_tsosglobX;
+  std::vector< float >  tree_SiCluster_tsosglobY;
+  std::vector< float >  tree_SiCluster_tsosglobZ;
+  
+   // pixel cluster position ----
+  std::vector< float >  tree_PixCluster_locX;
+  std::vector< float >  tree_PixCluster_locY;
+  std::vector< float >  tree_PixCluster_globX;
+  std::vector< float >  tree_PixCluster_globY;
+  std::vector< float >  tree_PixCluster_globZ;
+  std::vector< float >  tree_PixCluster_tsosglobX;
+  std::vector< float >  tree_PixCluster_tsosglobY;
+  std::vector< float >  tree_PixCluster_tsosglobZ;
+  std::vector< float >  tree_PixCluster_tsosX;
+  std::vector< float >  tree_PixCluster_tsosY;
+  
+  //-----------------------------
+  //then fill information of clusters
+  //attached to the tracks
+  std::vector< int >  tree_Strips_nstrip;
+  std::vector< int >  tree_Strips_idFirst; 
+  std::vector< int >  tree_Strips_idLast; 
+  
+  // strips infos ----
+  std::vector< int >    tree_Strips_stripCharges;
+  std::vector< float > 	tree_Strips_stripGains ;
+  std::vector< float > 	tree_Strips_stripNoises;
+  std::vector< bool >	tree_Strips_stripQualitiesBad ;
+
+      
+      
+      
+      
+      
+};
+
+//
+// constants, enums and typedefs
+//
+
+//
+// static data member definitions
+//
+
+//
+// constructors and destructor
+//
+TrackingPerf::TrackingPerf(const edm::ParameterSet& iConfig):
+ trackToken_(consumes<edm::View<reco::Track> >(iConfig.getUntrackedParameter<edm::InputTag>("tracks"))),
+  trackSrc_( consumes<edm::View<reco::Track> >( iConfig.getParameter<edm::InputTag>("trackLabel") )),
+  trajSrc_( consumes<std::vector<Trajectory> >( iConfig.getParameter<edm::InputTag>("tkTraj") )),
+  trajTrackAssociationSrc_( consumes<TrajTrackAssociationCollection>( iConfig.getParameter<edm::InputTag>("labelTrajToTrack") )),
+  trackAssociatorToken_(consumes<reco::TrackToTrackingParticleAssociator>(iConfig.getUntrackedParameter<edm::InputTag>("trackAssociator"))),
+  beamSpotToken_(consumes<reco::BeamSpot>(iConfig.getUntrackedParameter<edm::InputTag>("beamSpot")))
+{
+
+  usesResource("TFileService");
+  
+  //trackSrc_ = consumes<reco::TrackCollection>(src_);
+  ttrhbuilder_ = iConfig.getParameter<std::string>("TTRHBuilder");
+  
+  smalltree = fs->make<TTree>("ttree", "ttree");
+  
+  
+  
+   //-----------------------
+  //fill the tree per track
+  //smalltree->Branch("tree_track_nclusters",         &tree_track_nclusters); 	
+  smalltree->Branch("tree_track_pt",                &tree_track_pt);    		
+  smalltree->Branch("tree_track_eta",               &tree_track_eta );  		
+  smalltree->Branch("tree_track_phi",               &tree_track_phi );   		
+  smalltree->Branch("tree_track_nhits",             &tree_track_nhits); 		
+  smalltree->Branch("tree_track_NChi2",             &tree_track_NChi2); 		
+  smalltree->Branch("tree_track_Quality",           &tree_track_Quality );        
+  smalltree->Branch("tree_track_dxy",               &tree_track_dxy );        
+  smalltree->Branch("tree_track_dxyError",          &tree_track_dxyError);         
+  smalltree->Branch("tree_track_dz",                &tree_track_dz);           
+  smalltree->Branch("tree_track_dzError",           &tree_track_dzError  );        
+  smalltree->Branch("tree_track_numberOfLostHits",  &tree_track_numberOfLostHits); 
+  smalltree->Branch("tree_track_numberOfValidHits", &tree_track_numberOfValidHits); 
+  smalltree->Branch("tree_track_originalAlgo",      &tree_track_originalAlgo);      
+  smalltree->Branch("tree_track_algo",              &tree_track_algo); 
+  smalltree->Branch("tree_track_stopReason",        &tree_track_stopReason);  
+  smalltree->Branch("tree_track_idxClusterFirst",   &tree_track_idxClusterFirst);
+  smalltree->Branch("tree_track_idxClusterLast",    &tree_track_idxClusterLast); 
+  smalltree->Branch("tree_track_nSimHits",          &tree_track_nSimHits   ); 
+  smalltree->Branch("tree_track_isSimMatched",      &tree_track_isSimMatched   );  
+  
+  //then fill information of clusters
+  //attached to the tracks
+  
+  smalltree->Branch("tree_SiCluster_subDet",        &tree_SiCluster_subDet);      
+  smalltree->Branch("tree_SiCluster_PetalSide",     &tree_SiCluster_PetalSide );    
+  smalltree->Branch("tree_SiCluster_LayerNbr",      &tree_SiCluster_LayerNbr);      
+  smalltree->Branch("tree_SiCluster_WheelSide",     &tree_SiCluster_WheelSide );    
+ 
+  
+  smalltree->Branch("tree_SiCluster_charge",     &tree_SiCluster_charge);       
+  smalltree->Branch("tree_SiCluster_SoverN",     &tree_SiCluster_SoverN);      
+  smalltree->Branch("tree_SiCluster_noise",      &tree_SiCluster_noise );      
+  smalltree->Branch("tree_SiCluster_width",      &tree_SiCluster_width );      
+  smalltree->Branch("tree_SiCluster_barycenter", &tree_SiCluster_barycenter);  
+  smalltree->Branch("tree_SiCluster_detID",      &tree_SiCluster_detID );    
+  
+   // cluster position ----
+  smalltree->Branch("tree_SiCluster_locX",      &tree_SiCluster_locX );      
+  smalltree->Branch("tree_SiCluster_locY",      &tree_SiCluster_locY );    
+  smalltree->Branch("tree_SiCluster_tsosx",      &tree_SiCluster_tsosx);       
+  smalltree->Branch("tree_SiCluster_tsosy",      &tree_SiCluster_tsosy);        
+  smalltree->Branch("tree_SiCluster_globX",     &tree_SiCluster_globX );     
+  smalltree->Branch("tree_SiCluster_globY",     &tree_SiCluster_globY );    
+  smalltree->Branch("tree_SiCluster_globZ",     &tree_SiCluster_globZ );     
+  smalltree->Branch("tree_SiCluster_tsosglobX", &tree_SiCluster_tsosglobX);  
+  smalltree->Branch("tree_SiCluster_tsosglobY", &tree_SiCluster_tsosglobY);  
+  smalltree->Branch("tree_SiCluster_tsosglobZ", &tree_SiCluster_tsosglobZ);  
+  
+  
+   // pixcluster position ----
+  smalltree->Branch("tree_PixCluster_locX",      &tree_PixCluster_locX );      
+  smalltree->Branch("tree_PixCluster_locY",      &tree_PixCluster_locY );      
+  smalltree->Branch("tree_PixCluster_globX",     &tree_PixCluster_globX );     
+  smalltree->Branch("tree_PixCluster_globY",     &tree_PixCluster_globY );    
+  smalltree->Branch("tree_PixCluster_globZ",     &tree_PixCluster_globZ );     
+  smalltree->Branch("tree_PixCluster_tsosglobX", &tree_PixCluster_tsosglobX);  
+  smalltree->Branch("tree_PixCluster_tsosglobY", &tree_PixCluster_tsosglobY);  
+  smalltree->Branch("tree_PixCluster_tsosglobZ", &tree_PixCluster_tsosglobZ);   
+  smalltree->Branch("tree_PixCluster_tsosX",     &tree_PixCluster_tsosX);  
+  smalltree->Branch("tree_PixCluster_tsosY",     &tree_PixCluster_tsosY); 
+  
+  
+  smalltree->Branch("runNumber",  &runNumber,  "runNumber/I");
+  smalltree->Branch("eventNumber",&eventNumber,"eventNumber/I");
+  smalltree->Branch("lumiBlock"  ,&lumiBlock,  "lumiBlock/I");
+ 
+ //  int runNumber,eventNumber,lumiBlock;
+ //
+  runNumber = 0;
+  eventNumber = 0;
+  lumiBlock = 0;
+  
+  
+  trackingParticleToken_ = consumes<TrackingParticleCollection>(iConfig.getUntrackedParameter<edm::InputTag>("trackingParticles"));
+  trackingParticleRefToken_ = consumes<TrackingParticleRefVector>(iConfig.getUntrackedParameter<edm::InputTag>("trackingParticles"));
+}
+
+
+TrackingPerf::~TrackingPerf()
+{
+
+   // do anything here that needs to be done at desctruction time
+   // (e.g. close files, deallocate resources etc.)
+
+}
+
+
+//
+// member functions
+//
+
+// ------------ method called for each event  ------------
+void
+TrackingPerf::analyze(const edm::Event& iEvent, const edm::EventSetup& iSetup)
+{
+   
+
+  clearVariables();
+
+  using namespace edm;
+  using namespace reco;
+  using namespace std;
+
+
+  runNumber = iEvent.id().run();
+  std::cout << "runNumber = " << runNumber << std::endl;
+  eventNumber = iEvent.id().event();
+  lumiBlock = iEvent.luminosityBlock();
+ 
+  //edm::Handle<std::vector<reco::Track> > TracksForRes;
+  edm::Handle<  edm::View<reco::Track>  > TracksForRes;
+  iEvent.getByToken(trackSrc_, TracksForRes);
+  
+  edm::ESHandle<TrackerGeometry> TG;
+  iSetup.get<TrackerDigiGeometryRecord>().get(TG);
+  const TrackerGeometry* theTrackerGeometry = TG.product();
+   
+  edm::ESHandle<TransientTrackBuilder> theB;
+  iSetup.get<TransientTrackRecord>().get( "TransientTrackBuilder", theB );
+ 
+  edm::ESHandle<TransientTrackingRecHitBuilder> theTrackerRecHitBuilder;
+  iSetup.get<TransientRecHitRecord>().get(ttrhbuilder_,theTrackerRecHitBuilder);
+  
+  
+
+  
+  //get tracker geometry
+  edm::ESHandle<TrackerGeometry> pDD;
+  iSetup.get<TrackerDigiGeometryRecord>().get(pDD);
+  
+  
+  edm::Handle<std::vector<Trajectory> > TrajectoryCollection;
+  iEvent.getByToken(trajSrc_, TrajectoryCollection);
+  edm::Handle<TrajTrackAssociationCollection> trajTrackAssociationHandle;
+  iEvent.getByToken(trajTrackAssociationSrc_, trajTrackAssociationHandle);
+  
+  
+  edm::ESHandle<StripClusterParameterEstimator> parameterestimator;
+  iSetup.get<TkStripCPERecord>().get("StripCPEfromTrackAngle", parameterestimator); 
+  const StripClusterParameterEstimator &stripcpe(*parameterestimator);
+  
+  edm::ESHandle<PixelClusterParameterEstimator> pixel_parameterestimator;
+  iSetup.get<TkPixelCPERecord>().get("PixelCPEfromTrackAngle", pixel_parameterestimator); 
+  const PixelClusterParameterEstimator &pixelcpe(*pixel_parameterestimator);
+  
+  iSetup.get<IdealMagneticFieldRecord>().get(bField); 
+
+  edm::ESHandle<TrackerTopology> tTopoHandle;
+  iSetup.get<TrackerTopologyRcd>().get(tTopoHandle);
+  const TrackerTopology* const tTopo = tTopoHandle.product();
+
+  //beamspot
+  Handle<reco::BeamSpot> recoBeamSpotHandle;
+  iEvent.getByToken(beamSpotToken_, recoBeamSpotHandle);
+  BeamSpot const & bs = *recoBeamSpotHandle;
+  
+  
+  //Track hit association
+  
+  edm::Handle<reco::TrackToTrackingParticleAssociator> theAssociator;
+  iEvent.getByToken(trackAssociatorToken_, theAssociator);
+  const reco::TrackToTrackingParticleAssociator& associatorByHits = *theAssociator;
+
+  
+  
+  // FIXME: we really need to move to edm::View for reading the
+  // TrackingParticles... Unfortunately it has non-trivial
+  // consequences on the associator/association interfaces etc.
+  TrackingParticleRefVector tmpTP;
+  const TrackingParticleRefVector *tmpTPptr = nullptr;
+  edm::Handle<TrackingParticleCollection>  TPCollectionH;
+  edm::Handle<TrackingParticleRefVector>  TPCollectionHRefVector;
+
+  if(!trackingParticleToken_.isUninitialized()) {
+    iEvent.getByToken(trackingParticleToken_, TPCollectionH);
+    for(size_t i=0, size=TPCollectionH->size(); i<size; ++i) {
+      tmpTP.push_back(TrackingParticleRef(TPCollectionH, i));
+    }
+    tmpTPptr = &tmpTP;
+  }
+  else {
+    iEvent.getByToken(trackingParticleRefToken_, TPCollectionHRefVector);
+    tmpTPptr = TPCollectionHRefVector.product();
+  }
+  const TrackingParticleRefVector& tpCollection = *tmpTPptr;
+
+  // Fill mapping from Ref::key() to index
+  TrackingParticleRefKeyToIndex tpKeyToIndex;
+  for(size_t i=0; i<tpCollection.size(); ++i) {
+    tpKeyToIndex[tpCollection[i].key()] = i;
+  }
+  
+   //tracks
+  edm::Handle<edm::View<reco::Track> > tracksHandle;
+  iEvent.getByToken(trackToken_, tracksHandle);
+  const edm::View<reco::Track>& tracks = *tracksHandle;
+  // The associator interfaces really need to be fixed...
+  edm::RefToBaseVector<reco::Track> trackRefs;
+  /*for(edm::View<Track>::size_type i=0; i<tracks.size(); ++i) {
+    trackRefs.push_back(tracks.refAt(i));
+  }*/
+  int idxtrack = 0;
+  for(TrajTrackAssociationCollection::const_iterator it = trajTrackAssociationHandle->begin(); it!=trajTrackAssociationHandle->end(); ++it) {
+    //reco::TrackRef itTrack  = it->val;
+    trackRefs.push_back((*it).refAt(idxtrack));
+    idxtrack++;
+  }
+  
+  
+  
+  reco::RecoToSimCollection recSimColl = associatorByHits.associateRecoToSim(trackRefs, tpCollection);
+
+    
+  int idx_cluster_first = 0;
+  int idxtrack_2 = 0;
+  // Loop on tracks
+  for(TrajTrackAssociationCollection::const_iterator it = trajTrackAssociationHandle->begin(); it!=trajTrackAssociationHandle->end(); ++it) {
+    reco::TrackRef itTrack  = it->val;
+    edm::Ref<std::vector<Trajectory> > itraj  = it->key; // bug to find type of the key
+    std::vector<TrajectoryMeasurement> TMeas=itraj->measurements();
+    vector<TrajectoryMeasurement>::iterator itm;
+    
+    tree_track_pt.push_back(    itTrack->pt());
+    tree_track_eta.push_back(   itTrack->eta());
+    tree_track_phi .push_back(  itTrack->phi());
+    tree_track_nhits.push_back( itTrack->hitPattern().numberOfValidHits());
+    tree_track_NChi2 .push_back(itTrack->normalizedChi2());
+    
+    if( itTrack->quality(reco::TrackBase::undefQuality)        ) tree_track_Quality.push_back(1);
+    if( itTrack->quality(reco::TrackBase::loose)               ) tree_track_Quality.push_back(2);
+    if( itTrack->quality(reco::TrackBase::tight)               ) tree_track_Quality.push_back(3);
+    if( itTrack->quality(reco::TrackBase::highPurity)          ) tree_track_Quality.push_back(4);
+    if( itTrack->quality(reco::TrackBase::confirmed)           ) tree_track_Quality.push_back(5);
+    if( itTrack->quality(reco::TrackBase::goodIterative)       ) tree_track_Quality.push_back(6);
+    if( itTrack->quality(reco::TrackBase::looseSetWithPV)      ) tree_track_Quality.push_back(7);
+    if( itTrack->quality(reco::TrackBase::highPuritySetWithPV) ) tree_track_Quality.push_back(8);
+    if( itTrack->quality(reco::TrackBase::discarded)           ) tree_track_Quality.push_back(9);
+    if( itTrack->quality(reco::TrackBase::qualitySize)         ) tree_track_Quality.push_back(10);
+    
+    
+    tree_track_dxy.push_back(              itTrack->dxy(bs.position()));
+    tree_track_dxyError.push_back(         itTrack->dxyError());
+    tree_track_dz.push_back(               itTrack->dz(bs.position()));
+    tree_track_dzError.push_back(          itTrack->dzError());
+    tree_track_numberOfLostHits.push_back( itTrack->numberOfLostHits());
+    tree_track_numberOfValidHits.push_back(itTrack->numberOfValidHits());
+    
+    
+    tree_track_originalAlgo.push_back(itTrack->originalAlgo());
+    tree_track_algo.push_back(itTrack->algo());
+    tree_track_stopReason.push_back(itTrack->stopReason());
+    
+    
+    tree_track_idxClusterFirst.push_back(idx_cluster_first);
+    
+    
+    //--------------------
+    //track hit associator
+    auto foundTPs = recSimColl.find(itTrack);
+    if (foundTPs != recSimColl.end() && !foundTPs->val.empty()) {
+      tree_track_nSimHits.push_back(foundTPs->val[0].first->numberOfTrackerHits());
+      tree_track_isSimMatched.push_back(true);
+    }else{
+      tree_track_nSimHits.push_back(0);
+      tree_track_isSimMatched.push_back(false);
+    }
+    
+    
+    for (itm=TMeas.begin();itm!=TMeas.end();itm++){
+//      std::cout << "Found a traj" << std::endl;
+      const TrackingRecHit* hit = &*(*itm).recHit();
+      const DetId detid = hit->geographicalId();
+      int subDet = detid.subdetId();
+      
+      const TransientTrackingRecHit::ConstRecHitPointer theTTrechit = (*itm).recHit();
+      const SiStripRecHit2D* SiStriphit2D = dynamic_cast<const SiStripRecHit2D*>((*theTTrechit).hit());
+      //const SiStripRecHit2D* SiStriphit2D = dynamic_cast<const SiStripRecHit2D*>( theTTrechit->hit());
+      const SiStripRecHit1D* SiStriphit1D = dynamic_cast<const SiStripRecHit1D*>((*theTTrechit).hit());
+      const SiStripCluster* si_cluster = 0;
+      
+      if (SiStriphit2D!=0){
+        si_cluster = &*(SiStriphit2D->cluster());
+      }
+      if (SiStriphit1D!=0){
+        si_cluster = &*(SiStriphit1D->cluster());
+      }
+      
+      SiStripClusterInfo clusterInfo = SiStripClusterInfo( *si_cluster, iSetup, detid); 
+      //if(cluster == 0) cout << "no cluster found " << endl;
+      if(si_cluster!=0){
+        
+        const TrajectoryStateOnSurface tsos = itm->updatedState();
+	int Cluster_WheelSide = 0;
+	int Cluster_detID = detid;
+	int Cluster_PetalSide = 0;
+	int Cluster_subDet = -1;
+	int Cluster_LayerNbr = -1;
+	//determine subdte id
+	if(subDet == SiStripDetId::TIB){
+	  Cluster_subDet = 0;
+	  Cluster_LayerNbr = tTopo->tobLayer(detid.rawId());
+	} 
+	if(subDet == SiStripDetId::TOB){
+	  Cluster_subDet = 1;
+	  Cluster_LayerNbr =tTopo->tibLayer(detid.rawId());
+	} 
+	if(subDet == SiStripDetId::TID){
+	  Cluster_subDet = 2;
+	  Cluster_WheelSide =tTopo->tidSide(detid.rawId());
+	  Cluster_LayerNbr =tTopo->tidWheel(detid.rawId());
+	} 
+	if(subDet == SiStripDetId::TEC){
+	  Cluster_subDet = 3; 
+	  Cluster_WheelSide = tTopo->tecSide(detid.rawId());
+	  Cluster_LayerNbr =tTopo->tecWheel(detid.rawId());
+	  if(tTopo->tecIsFrontPetal(detid.rawId()))  Cluster_PetalSide = 1;
+	  else                                       Cluster_PetalSide = -1;
+	  
+	}
+	
+	
+	tree_SiCluster_WheelSide.push_back(Cluster_WheelSide);
+	tree_SiCluster_detID.push_back(    Cluster_detID);
+	tree_SiCluster_PetalSide.push_back(Cluster_PetalSide);
+        tree_SiCluster_subDet.push_back(   Cluster_subDet);
+	tree_SiCluster_LayerNbr.push_back( Cluster_LayerNbr);
+	
+	tree_SiCluster_tsosx        .push_back( tsos.localPosition().x());
+        tree_SiCluster_tsosy        .push_back( tsos.localPosition().y());
+	
+        tree_SiCluster_SoverN       .push_back( clusterInfo.signalOverNoise());
+	tree_SiCluster_noise        .push_back( clusterInfo.noiseRescaledByGain());
+	tree_SiCluster_charge       .push_back( clusterInfo.charge());
+	tree_SiCluster_width        .push_back( si_cluster->amplitudes().size());
+	tree_SiCluster_barycenter   .push_back( si_cluster->barycenter());
+	
+	tree_SiCluster_tsosglobX .push_back( tsos.globalPosition().x());
+        tree_SiCluster_tsosglobY .push_back( tsos.globalPosition().y());
+        tree_SiCluster_tsosglobZ .push_back( tsos.globalPosition().z());
+	
+	 // cluster position ----
+	DetId clusterDetId(detid);
+    	const StripGeomDetUnit * stripdet = (const StripGeomDetUnit*) theTrackerGeometry->idToDetUnit(clusterDetId);
+    	StripClusterParameterEstimator::LocalValues parameters=stripcpe.localParameters(*si_cluster, *stripdet);
+    	
+	LocalPoint lp = parameters.first;
+	LocalVector lbfield=(stripdet->surface()).toLocal(bField->inTesla(stripdet->surface().position()));
+	
+	tree_SiCluster_locX  .push_back( lp.x());
+        tree_SiCluster_locY  .push_back( lbfield.y());
+	tree_SiCluster_globX .push_back( theTTrechit->globalPosition().x());
+        tree_SiCluster_globY .push_back( theTTrechit->globalPosition().y());
+        tree_SiCluster_globZ .push_back( theTTrechit->globalPosition().z());
+   
+	idx_cluster_first++;
+        //tree_track_nclusters++;
+      }//end if cluster
+      tree_track_idxClusterLast.push_back(idx_cluster_first);
+      
+      
+      const SiPixelRecHit* pixelHits= dynamic_cast<const SiPixelRecHit*>((*theTTrechit).hit());
+      const SiPixelCluster* pix_cluster = 0;
+      
+      
+      if(pixelHits != 0){
+         pix_cluster = &*(pixelHits->cluster());
+         std::cout << " found a pixel hit " << std::endl;
+      
+         const TrajectoryStateOnSurface tsos = itm->updatedState();
+	  
+	  // cluster position ----
+	 DetId clusterDetId(detid);
+    	 const PixelGeomDetUnit * pixeldet = (const PixelGeomDetUnit*) theTrackerGeometry->idToDetUnit(clusterDetId);
+    	 PixelClusterParameterEstimator::VLocalValues parameters=pixelcpe.localParametersV(*pix_cluster, *pixeldet);
+  
+	 LocalPoint lp = parameters[0].first;
+	 LocalVector lbfield=(pixeldet->surface()).toLocal(bField->inTesla(pixeldet->surface().position()));
+	
+	 	
+	 tree_PixCluster_tsosX.push_back( tsos.localPosition().x());
+         tree_PixCluster_tsosY.push_back( tsos.localPosition().y());
+	 
+         tree_PixCluster_locX  .push_back( lp.x());
+         tree_PixCluster_locY  .push_back( lbfield.y());
+	 tree_PixCluster_globX .push_back( theTTrechit->globalPosition().x());
+         tree_PixCluster_globY .push_back( theTTrechit->globalPosition().y());
+         tree_PixCluster_globZ .push_back( theTTrechit->globalPosition().z());
+	 
+	 tree_PixCluster_tsosglobX .push_back( tsos.globalPosition().x());
+         tree_PixCluster_tsosglobY .push_back( tsos.globalPosition().y());
+         tree_PixCluster_tsosglobZ .push_back( tsos.globalPosition().z());
+
+
+	 
+      }
+      
+      
+     
+    }//loop on clusters
+    idxtrack_2++;
+  }//end loop on tracks
+  
+
+
+     smalltree->Fill();
+
+
+
+}
+
+
+// ------------ method called once each job just before starting event loop  ------------
+void
+TrackingPerf::beginJob()
+{
+}
+
+// ------------ method called once each job just after ending the event loop  ------------
+void
+TrackingPerf::endJob()
+{
+}
+
+// ------------ method fills 'descriptions' with the allowed parameters for the module  ------------
+void
+TrackingPerf::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
+  //The following says we do not know what parameters are allowed so do no validation
+  // Please change this to state exactly what you do use, even if it is no parameters
+  edm::ParameterSetDescription desc;
+  desc.setUnknown();
+  descriptions.addDefault(desc);
+
+  //Specify that only 'tracks' is allowed
+  //To use, remove the default given above and uncomment below
+  //ParameterSetDescription desc;
+  //desc.addUntracked<edm::InputTag>("tracks","ctfWithMaterialTracks");
+  //descriptions.addDefault(desc);
+}
+
+//define this as a plug-in
+DEFINE_FWK_MODULE(TrackingPerf);
+
+
+
+
+
+
+
+/* undefAlgorithm 	
+ctf 	
+duplicateMerge 	
+cosmics 	
+initialStep 	
+lowPtTripletStep 	
+pixelPairStep 	
+detachedTripletStep 	
+mixedTripletStep 	
+pixelLessStep 	
+tobTecStep 	
+jetCoreRegionalStep 	
+conversionStep 	
+muonSeededStepInOut 	
+muonSeededStepOutIn 	
+outInEcalSeededConv 	
+inOutEcalSeededConv 	
+nuclInter 	
+standAloneMuon 	
+globalMuon 	
+cosmicStandAloneMuon 	
+cosmicGlobalMuon 	
+highPtTripletStep 	
+lowPtQuadStep 	
+detachedQuadStep 	
+reservedForUpgrades1 	
+reservedForUpgrades2 	
+bTagGhostTracks 	
+beamhalo 	
+gsf 	
+hltPixel 	
+hltIter0 	
+hltIter1 	
+hltIter2 	
+hltIter3 	
+hltIter4 	
+hltIterX 	
+hiRegitMuInitialStep 	
+hiRegitMuLowPtTripletStep 	
+hiRegitMuPixelPairStep 	
+hiRegitMuDetachedTripletStep 	
+hiRegitMuMixedTripletStep 	
+hiRegitMuPixelLessStep 	
+hiRegitMuTobTecStep 	
+hiRegitMuMuonSeededStepInOut 	
+hiRegitMuMuonSeededStepOutIn 	
+algoSize 
+ */
+ 
+void TrackingPerf::clearVariables() {
+ //-----------------------
+  //fill the tree per track
+   //tree_track_nclusters.clear();
+   tree_track_pt.clear();
+   tree_track_eta.clear();
+   tree_track_phi.clear();
+   tree_track_nhits.clear();
+   tree_track_NChi2.clear();
+   tree_track_Quality.clear();
+   tree_track_dxy.clear(); 
+   tree_track_dxyError.clear();
+   tree_track_dz.clear();
+   tree_track_dzError.clear(); 
+   tree_track_numberOfLostHits.clear();
+   tree_track_numberOfValidHits.clear();
+   tree_track_originalAlgo.clear(); 
+   tree_track_algo.clear(); 
+   tree_track_idxClusterFirst.clear();
+   tree_track_idxClusterLast.clear();
+   tree_track_stopReason.clear();
+   tree_track_nSimHits.clear(); 
+   tree_track_isSimMatched.clear();
+  
+   tree_SiCluster_subDet.clear(); 
+   tree_SiCluster_PetalSide.clear();
+   tree_SiCluster_LayerNbr.clear(); 
+   tree_SiCluster_WheelSide.clear(); 
+   tree_SiCluster_charge.clear();
+   tree_SiCluster_tsosx.clear();
+   tree_SiCluster_tsosy.clear();
+   tree_SiCluster_SoverN.clear();
+   tree_SiCluster_noise.clear();
+   tree_SiCluster_width.clear();
+   tree_SiCluster_barycenter.clear();
+   tree_SiCluster_detID.clear();
+  
+   // cluster position ----
+   tree_SiCluster_locX.clear();
+   tree_SiCluster_locY.clear();
+   tree_SiCluster_globX.clear();
+   tree_SiCluster_globY.clear();
+   tree_SiCluster_globZ.clear();
+   tree_SiCluster_tsosglobX.clear();
+   tree_SiCluster_tsosglobY.clear();
+   tree_SiCluster_tsosglobZ.clear();
+  
+  
+   // cluster position ----
+   tree_PixCluster_locX.clear();
+   tree_PixCluster_locY.clear();
+   tree_PixCluster_globX.clear();
+   tree_PixCluster_globY.clear();
+   tree_PixCluster_globZ.clear();
+   tree_PixCluster_tsosglobX.clear();
+   tree_PixCluster_tsosglobY.clear();
+   tree_PixCluster_tsosglobZ.clear();
+   tree_PixCluster_tsosX.clear();
+   tree_PixCluster_tsosY.clear();
+  
+   // strips infos ----
+   tree_Strips_stripCharges.clear();
+   tree_Strips_stripGains .clear();
+   tree_Strips_stripNoises.clear();
+   tree_Strips_stripQualitiesBad .clear();
+
+      
+}
